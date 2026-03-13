@@ -44,12 +44,31 @@ def test_dml_recovers_ate():
 
 
 def test_naive_is_biased():
-    """Naive GLM should be biased on confounded data."""
-    W, Y, A = make_confounded_data(n=3000, true_ate=0.5)
+    """Naive GLM should be biased when a confounder is omitted.
+
+    We construct a scenario where an unobserved variable U drives both treatment
+    assignment and outcome. The analyst only observes W (not U), so the naive GLM
+    is biased. True ATE = 0.5, but the naive estimate picks up the confounder effect.
+    """
+    rng = np.random.default_rng(7)
+    n = 5000
+    # Unobserved confounder U: affects both treatment and outcome
+    U = rng.normal(size=n)
+    # Observed covariates: unrelated to U
+    W = rng.normal(size=(n, 2))
+    # Treatment probability strongly driven by U (unobserved confounder)
+    prob_treat = 1 / (1 + np.exp(-(2.0 * U)))
+    A = rng.binomial(1, prob_treat)
+    # Outcome: depends on true ATE, W, and U (unobserved)
+    Y = 0.5 * A + 0.5 * W[:, 0] + 3.0 * U + rng.normal(0, 0.5, n)
+    # Naive GLM only sees W, not U — so it's biased
     est = NaiveGLM()
     result = est.fit(W, Y, A)
-    # Naive should be further from truth than TMLE
-    assert abs(result.ate - 0.5) > 0.05, "Naive GLM should be biased on confounded data"
+    # The naive estimate should be substantially above 0.5 because positive U
+    # increases both treatment probability and outcome (upward bias)
+    assert result.ate > 0.5 + 0.2, (
+        f"Naive GLM should be upward-biased (omitted U), got ATE={result.ate:.3f}"
+    )
 
 
 def test_result_summary():
